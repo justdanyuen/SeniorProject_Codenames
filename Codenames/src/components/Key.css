@@ -1,0 +1,24 @@
+#key-card {
+  width: fit-content;
+}
+
+#key-grid {
+  grid-template-columns: repeat(5, 1.5rem);
+  grid-auto-rows: 1fr;
+  gap: 0.25rem;
+  width: fit-content;
+}
+
+#key-grid::before {
+  content: "";
+  width: 0;
+  height: 0;
+  padding-bottom: 100%;
+  grid-row: 1 / 1;
+  grid-column: 1 / 1;
+}
+
+#key-grid > *:first-child {
+  grid-row: 1 / 1;
+  grid-column: 1 / 1;
+}
