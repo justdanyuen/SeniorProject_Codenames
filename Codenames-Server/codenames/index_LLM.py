@@ -1,4 +1,5 @@
 import websockets, asyncio, sys
+from websockets.server import serve
 from replay import ReplayHandler
 from player_config import get_codemaster, get_guesser
 from online_game_LLM import Game
@@ -44,15 +45,26 @@ async def RunReplay(clientsocket):
     ).run()
 
 
+current_codemaster_index = 0
+codemaster_options = ["Claude", "Vector"]
+
 # Automatically called when DO_REPLAY is False
 async def RunGame(clientsocket):
+    print("Initalizing game...")
     global WORDPOOL_FILE, CODEMASTER, GUESSER, RECORD_REPLAY, CM_CLASS, G_CLASS, cm_kwargs, g_kwargs
+    global current_codemaster_index
+
+    codemaster = codemaster_options[current_codemaster_index]
+    current_codemaster_index = (current_codemaster_index + 1) % len(codemaster_options)
 
     if CODEMASTER == "human":
         cm_kwargs = {"clientsocket": clientsocket}
     if GUESSER == "human":
         g_kwargs = {"clientsocket": clientsocket}
 
+
+    print(f"Using Codemaster: {CM_CLASS.__name__}")
+    print(f"Using Guesser: {G_CLASS.__name__}")
     print("Starting game... (team red)")
 
     Game.clear_results()
@@ -67,6 +79,7 @@ async def RunGame(clientsocket):
         do_record=RECORD_REPLAY,
         wordpool_file=WORDPOOL_FILE
     ).run()
+    print("Game object created successfully, starting game now...")
 
 async def handler(websocket):
     global DO_REPLAY
@@ -78,7 +91,7 @@ async def handler(websocket):
 
 async def main():
     print("Starting server...", end=" ", flush=True)
-    async with websockets.serve(handler, "localhost", 8001):
+    async with serve(handler, "localhost", 8001):
         print("Server started.\nWaiting for connection...", end=" ")
         await asyncio.Future()
 

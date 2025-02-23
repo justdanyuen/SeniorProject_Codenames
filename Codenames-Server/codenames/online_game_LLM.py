@@ -10,9 +10,15 @@ import colorama
 import gensim.models.keyedvectors as word2vec
 import numpy as np
 from nltk.corpus import wordnet_ic
-from replay import GuessAction, HintAction, ReplayHandler
+# from replay_combo import GuessAction, HintAction, ReplayHandler
+from replay_combo import GuessAction, HintAction, ReplayHandler
 from players.claude_online import AICodemaster, OnlineGuesser, send
 from players.codemaster import Codemaster
+# from players.online import OnlineCodemaster, OnlineGuesser, send
+from players.vector_codemaster import VectorCodemaster
+from players.online import OnlineCodemaster, OnlineGuesser, send
+
+
 
 class GameCondition(enum.Enum): #keep the same, return type on termination
     """Enumeration that represents the different states of the game"""
@@ -31,7 +37,7 @@ class Game:
     def __init__(self, codemaster, guesser, clientsocket,
                  seed="time", do_print=True, do_log=True, game_name="default",
                  cm_kwargs={}, g_kwargs={}, replay_folder="replays", do_record=False,
-                 wordpool_file="game_wordpool.txt", is_replaying=False):
+                 wordpool_file="game_wordpool.txt", is_replaying=False, codemaster_name=None):
         """ Setup Game details
 
         Args:
@@ -75,9 +81,49 @@ class Game:
             self._save_stdout = sys.stdout
             sys.stdout = open(os.devnull, 'w')
 
+        # self.codemaster_name = codemaster_name if codemaster_name else codemaster.__name__
+
+        # Rotate codemaster every game
+        selected_codemaster = ReplayHandler.get_next_codemaster()  # Get the correct Codemaster index
+        # self.codemaster_name = selected_codemaster.__name__
+        # print("Our codemaster name is %s", codemaster_name)
+        if (selected_codemaster == 0):
+            self.codemaster = OnlineCodemaster(clientsocket, codemaster, cm_kwargs)
+        else:
+            self.codemaster = AICodemaster(clientsocket, codemaster) 
+
+
+        codemaster_name = self.codemaster.__class__.__name__
+        print("The codemaster name is ", codemaster_name)
+
+
+        # Set seed BEFORE using it
+        if is_replaying:
+            self.seed = codemaster.codemaster.seed  # Ensure the correct seed is used
+        elif seed == 'time':
+            self.seed = time.time()
+        else:
+            self.seed = seed
+        random.seed(self.seed)  # Set random seed
+
+        # print(f"Seed initialized: {self.seed}, Codemaster: {self.codemaster_name}")
+
         #change these to LLM
-        self.codemaster = AICodemaster(clientsocket, codemaster)
+        # self.codemaster = AICodemaster(clientsocket, codemaster)
         self.guesser = OnlineGuesser(clientsocket, self.codemaster.codemaster if is_replaying else guesser, is_replaying, g_kwargs)
+
+        # Save which codemaster was used in the replay
+        self.replayManager = None if not do_record else ReplayHandler(
+            time.time(),
+            self.seed,
+            replay_folder,
+            True,
+            **{
+                "one_team_game": True,
+                "first_team": "red",
+                "codemaster_name": codemaster_name
+            }
+        )
 
         self.clientsocket = clientsocket
 
@@ -86,31 +132,19 @@ class Game:
         self.do_log = do_log
         self.game_name = game_name
 
-        # set seed so that board/keygrid can be reloaded later
-        if is_replaying:
-            self.seed = self.codemaster.codemaster.seed
-            random.seed(self.seed)
-        elif seed == 'time':
-            self.seed = time.time()
-            random.seed(self.seed)
-        else:
-            self.seed = seed
-            random.seed(seed)
+        
+        # self.replayManager = None if not do_record else ReplayHandler(
+        #     time.time(),
+        #     self.seed,
+        #     replay_folder,
+        #     True,
+        #     **{
+        #         "one_team_game": True,
+        #         "first_team": "red"
+        #     }
+        # )
 
-        print("seed:", self.seed)
-
-        self.replayManager = None if not do_record else ReplayHandler(
-            time.time(),
-            self.seed,
-            replay_folder,
-            True,
-            **{
-                "one_team_game": True,
-                "first_team": "red"
-            }
-        )
-
-        if self.replayManager is not None:
+        if self.replayManager:
             self.replayManager.save_replay()
 
         # load board words
@@ -309,6 +343,7 @@ class Game:
             words_in_play = self.get_words_on_board()
             current_key_grid = self.get_key_grid()
             await self.codemaster.set_game_state(words_in_play, current_key_grid)
+            
             self._display_key_grid()
             self._display_board_codemaster()
 
@@ -317,6 +352,7 @@ class Game:
             if self.replayManager is not None:
                 self.replayManager.add_action(HintAction(clue, clue_num, "red"))
                 self.replayManager.save_replay()
+            
             game_counter += 1
             keep_guessing = True
             guess_num = 0
